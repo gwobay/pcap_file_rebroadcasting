@@ -1,0 +1,141 @@
+  
+  size_t
+  ASX_ITCH_1_1_Handler::parse(size_t context, const char* buffer, size_t len)
+{
+  
+    const asx_itch_1_1::downstream_header_t* header = reinterpret_cast<const asx_itch_1_1::downstream_header_t*>(buffer);
+    
+    uint64_t seq_num = ntohll(header->seq_num);
+    uint16_t message_count = ntohs(header->message_count);
+    uint64_t next_seq_num = seq_num + message_count;
+    
+    if(unlikely(m_drop_packets)) {
+      --m_drop_packets;
+      return 0;
+    }
+    
+    asx_channel* asxCh=get_asx_channel(context);
+    if (!asxCh)
+    {
+    	m_loggerr->log_printf(Log::WARN, "%s: unknown channel %u\n", __func__, context);
+    }
+
+    channel_info* wk_channel= asxCh->m_channel_info;
+    if(next_seq_num <= wk_channel->seq_no) {
+      return 0;
+    }
+    
+    mutex_t::scoped_lock lock;
+    if(context != 0) {
+      lock.acquire(m_mutex);
+    }
+    
+    if(unlikely(!wk_channel->last_update.is_set())) {
+      memcpy(m_session, header->session, 10);
+      m_logger->log_printf(Log::INFO, "ASX_ITCH_1_1_Handler: %s Session = %10s", m_name.c_str(), m_session);
+      wk_channel->seq_no = seq_num;
+    }
+    /*
+    if(unlikely(strncmp(m_session, header->session, 10))) {
+      return 0;
+    }
+    */
+    
+    if(next_seq_num <= wk_channel->seq_no) {
+      return 0;
+    } else if(seq_num > wk_channel->seq_no) {
+      if(wk_channel->begin_recovery(this, buffer, len, seq_num, next_seq_num)) {
+        return 0;
+      }
+    }
+    
+    size_t parsed_len = parse2(context, buffer, len);
+    
+    wk_channel->seq_no = next_seq_num;
+    wk_channel->last_update = Time::currentish_time();
+    
+    if(!wk_channel->queue.empty()) {
+      wk_channel->process_recovery(this);
+    }
+    
+    return parsed_len;
+}
+
+  size_t
+  ASX_ITCH_1_1_Handler::parse2(size_t context, const char* buffer, size_t len)
+{
+    if(m_recorder) {
+      Logger::mutex_t::scoped_lock l(m_recorder->mutex());
+      record_header h(Time::current_time(), context, len);
+      m_recorder->unlocked_write((const char*)&h, sizeof(record_header));
+      m_recorder->unlocked_write(buffer, len);
+      if(m_record_only) {
+        return len;
+      }
+    }
+    
+    const asx_itch_1_1::downstream_header_t* header = reinterpret_cast<const asx_itch_1_1::downstream_header_t*>(buffer);
+    uint64_t seq_num = ntohll(header->seq_num);
+    uint16_t message_count = ntohs(header->message_count);
+    
+    size_t parsed_len = sizeof(asx_itch_1_1::downstream_header_t);
+    const char* block = buffer + sizeof(asx_itch_1_1::downstream_header_t);
+    
+    asx_channel* asxCh=get_asx_channel(context);
+    channel_info* wk_channel= asxCh->m_channel_info;
+
+    if(seq_num < wk_channel->seq_no && message_count > 0) {
+      //m_logger->log_printf(Log::INFO, "ASX_ITCH_1_1_Handler::parse2: %s received partially-new packet seq_num=%zd expected_seq_num=%zd msg_count=%d",
+      //                     m_name.c_str(), seq_num, wk_channel->seq_no, message_count);
+      while(seq_num < wk_channel->seq_no && message_count > 0) {
+        // a rare case, this message contains some things we've already seen and some
+        // things we haven't, skip what we've already seen
+        uint16_t message_length = ntohs(reinterpret_cast<const asx_itch_1_1::message_block_t*>(block)->message_length);
+        parsed_len += 2 + message_length;
+        if (unlikely(parsed_len > len)) {
+          m_logger->log_printf(Log::ERROR, "ASX_ITCH_1_1_Handler::parse: tried to more bytes than len (%zd)", len);
+          return 0;
+        }
+        block += 2 + message_length;
+        --message_count;
+        ++seq_num;
+      }
+    }
+    
+    for( ; message_count > 0; --message_count) {
+      uint16_t message_length = ntohs(reinterpret_cast<const asx_itch_1_1::message_block_t*>(block)->message_length);
+      parsed_len += 2 + message_length;
+      if (unlikely(parsed_len > len)) {
+        m_logger->log_printf(Log::ERROR, "ASX_ITCH_1_1_Handler::parse: tried to more bytes than len (%zd)", len);
+        return 0;
+      }
+      size_t parser_result = parse_message(0, block+2, message_length);
+      if (unlikely(parser_result != message_length)) {
+        m_logger->log_printf(Log::ERROR, "ASX_ITCH_1_1_Handler::parse: ERROR message parser returned %zu bytes parsed, expected %u\n",
+                             parser_result, message_length);
+        return 0;
+      }
+      block += 2 + message_length;
+    }
+    
+    if(unlikely(parsed_len != len)) {
+      m_logger->log_printf(Log::ERROR, "ASX_ITCH_1_1_Handler::parse: Received buffer of size %zd but parsed %zd, message_count=%d",
+                           len, parsed_len, (int) ntohs(header->message_count));
+      return 0;
+    }
+    
+    return parsed_len;
+}
+  
+
+void ASX_ITCH_1_1_Handler::prepend_tcp_message(const char* session, size_t context, size_t seqno, const char*buf, size_t len){
+	char new_msg[len+sizeof(asx_itch_1_1::downstream_header_t)];
+	asx_itch_1_1::downstream_header_t* header = reinterpret_cast<asx_itch_1_1::downstream_header_t*>(new_msg);
+	memset(header->session, ' ', sizeof(header->session));
+	memcpy(header->session, session, sizeof(header->session));
+	header->seq_num = htoll(seqno);
+	header->message_count = htons(1);
+	char *p=&new_msg[sizeof(asx_itch_1_1::downstream_header_t)];
+	memcpy(p, buf, len);
+	parse2(context, new_msg, len+sizeof(asx_itch_1_1::downstream_header_t));
+}

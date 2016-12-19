@@ -1,0 +1,11 @@
+void ASX_ITCH_1_1_Handler::prepend_tcp_message(const char* session, size_t context, size_t seqno, const char*buf, size_t len){
+	char new_msg[len+sizeof(asx_itch_1_1::downstream_header_t)];
+	asx_itch_1_1::downstream_header_t* header = reinterpret_cast<asx_itch_1_1::downstream_header_t*>(new_msg);
+	memset(header->session, ' ', sizeof(header->session));
+	memcpy(header->session, session, sizeof(header->session));
+	header->seq_num = htoll(seqno);
+	header->message_count = htons(1);
+	char *p=&new_msg[sizeof(asx_itch_1_1::downstream_header_t)];
+	memcpy(p, buf, len);
+	parse2(context, new_msg, len+sizeof(asx_itch_1_1::downstream_header_t));
+}
