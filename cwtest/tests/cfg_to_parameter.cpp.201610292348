@@ -1,0 +1,366 @@
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/epoll.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <sys/eventfd.h>
+
+#include <netinet/tcp.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <ITCH/functions.h>
+#include <Util/Parameter.h>
+#include <Util/Network_Utils.h>
+#include <Util/File_Utils.h>
+
+#include <initializer_list>
+
+#include <boost/iostreams/device/file.hpp>
+#include <boost/assign/list_of.hpp>
+#include <boost/tokenizer.hpp>
+#include <boost/foreach.hpp>
+#include <boost/algorithm/string/trim_all.hpp>
+
+#include <stdarg.h>
+#include <stdint.h>
+#include <chrono>
+#include <thread>
+#include <vector>
+
+
+using namespace std;
+using namespace hf_cwtest;
+using namespace hf_tools;
+static Parameter m_parameters;
+static void replace_c(string& aLine, char old_c, char new_c=' ')
+{
+	for (string::iterator it=aLine.begin(); it != aLine.end(); it++){
+                if (*it == old_c) *it=new_c;
+	}
+}
+
+static size_t occurrence_c(const char* line, char which){
+	size_t k=0;
+	while (*line){
+		if (*line++ == which) k++;
+	}
+	return k;
+}
+
+static void get_tokens(const string& aLine, vector<string>& list, char delim=' ')
+{
+    const char *p0=aLine.c_str();
+    const char *pN=p0;
+    bool line_end=false;
+    while (!line_end){
+        pN=p0;
+        while (*pN && *pN != delim ) pN++;
+        if (!*pN) line_end=true;
+	if (pN-p0)
+        list.push_back(trim(string(p0, size_t(pN-p0))));
+        if (line_end) break;
+        p0=++pN;
+    }
+}
+
+/*
+void read_vector_param(hash_map<string, Parameter>& parent_map, char* first_line, FILE *cfg)
+{
+	char* pCol=strchr(first_line, ':');
+	if (!pCol) return;
+	char* pv_begin=strchr(pCol, '[');
+	if (!pv_begin) return;
+	*pCol=0;
+	string key=trim(first_line);
+	string text_buf=(++pv_begin);
+   	
+	char* has_end=strchr(pv_begin, ']');
+	char cfgbuf[160];
+   	while (!has_end){ 
+		fgets(cfgbuf, 160, cfg); 
+		char *pH=strchr(cfgbuf, '#'); 
+		if (pH) *pH=0; 
+		pH=cfgbuf; 
+		has_end=strchr(pH, ']');
+		if (has_end) *has_end=0;
+		text_buf += trim(pH);
+   	}
+	if (textBuf.find(',')==string::npos){
+		throw runtime_error("Vector not separated by comma");
+	}
+	if (text_buf.find('{') != string::npos){
+		vector<Parameter> paramV;
+		vector<string> tokens;
+		get_tokens(text_buf, tokens, '}');
+		for (size_t s=0; s<tokens.size(); s++){
+			vector<string> pairs;
+			get_tokens(tokens[s], pairs, ',');
+			Parameter v_param;
+			hash_map<string, Parameter> kv;
+			for (size_t p=0; p<pairs.size(); p++){
+				char* pkey=pairs[p].c_str();
+				char* pcol=strchr(pairs[p].c_str(), ':');
+				*pcol++=0;
+				Parameter param_value;
+				if (*pcol!='$')
+				param_value.setString(trim(pcol));
+				else
+				{
+					string var=++pcol;
+					if (m_parameters.has(var)) paramV.push_back(m_parameters[var].getString());
+					else paramV.push_back(--pcol);
+					
+				}
+				kv[trim(pkey)]=param_value;
+			}
+			v_param.setDict(kv);
+			paramV.push_back(v_param);
+		}
+		parent_map[trim(key)]=paramV;
+		return;
+	} 
+	if (text_buf.find('\'') != string::npos || text_buf.find('"') != string::npos){
+		//vector of string
+		char qt=textBuf[0];
+		replace_c(textBuf, qt);
+		vector<string> v_data;
+		get_tokens(textBuf, v_data, ',');
+		Parameter saveData;
+		vector<string> paramV;
+		for (size_t v=0; v< v_data.size(); v++){
+			if (v_data[v][0]!='$'){
+				paramV.push_back(v_data[v]);
+				continue;
+			}
+			string var=v_data[v].substr(1, v_data[v].length-1);
+			if (m_parameters.has(var)) paramV.push_back(m_parameters[var].getString());
+			else paramV.push_back(v_data[v]);
+		}
+		saveData.setStringVector(paramV);
+		parent_map[trim(key)]=paramV;
+		return
+	} else if (strchr(pH, '.')){
+		//vector of double
+	} else if (strstr(pH, " True true False false Y N y n ")){
+		//vector of bool
+	} else {
+		//vector of integer
+	}
+}
+*/
+
+void read_vector_param_value(Parameter& v_param_to_fill, string& textBuf, FILE *cfg)
+{
+	char cfgbuf[160];
+   	while (!feof(cfg) && textBuf.find(']') == string::npos){ 
+		fgets(cfgbuf, 160, cfg); 
+		char *pH=strchr(cfgbuf, '#'); 
+		if (pH) *pH=0; 
+		string aLine =trim(cfgbuf); 
+		if (aLine.find(',')==string::npos)
+			aLine += ',';
+		textBuf += aLine;
+   	}
+	/* no comma when only one element
+	if (textBuf.find(',')==string::npos){
+		cout << textBuf << endl;
+		throw runtime_error("Vector not separated by comma");
+	}
+	*/
+	if (textBuf.find('{') != string::npos){
+		v_param_to_fill.setVector(vector<Parameter>());
+		const vector<Parameter>& paramV=v_param_to_fill.getVector();
+		vector<string> tokens;
+		get_tokens(textBuf, tokens, '}');
+		for (size_t s=0; s<tokens.size(); s++){
+			vector<string> pairs;
+			get_tokens(tokens[s], pairs, ',');
+			paramV.push_back(Parameter());
+			const Parameter& h_param=paramV.back();
+			h_param.setDict(hash_map<string, Parameter>());
+			const hash_map<string, Parameter>& kv=h_param.getDict();
+			for (size_t p=0; p<pairs.size(); p++){
+				size_t i_col=pairs[p].find(':');
+				string sKey=trim(pairs[p].substr(0, i_col));
+				string sVal=trim(pairs[p].substr(i_col+1));
+				Parameter& param_value=kv[sKey];
+				if (sVal[0] != '$')
+				param_value.setString(trim(sVal));
+				else
+				{
+					string var=sVal.substr(1);
+					if (m_parameters.has(var)) param_value.setString(m_parameters[var].getString());
+					else param_value.setString(sVal);
+				}
+				//kv[trim(sKey)]=param_value;
+			}
+			//paramV.push_back(h_param);
+		}
+		return;
+	} 
+	if (textBuf.find('\'') != string::npos || textBuf.find('"') != string::npos){
+		//vector of string
+		v_param_to_fill.setStringVector(vector<string>());
+		const vector<string>& paramV=v_param_to_fill.getStringVector();
+		char qt=textBuf[0];
+		replace_c(textBuf, qt);
+		vector<string> v_data;
+		get_tokens(textBuf, v_data, ',');
+		for (size_t v=0; v< v_data.size(); v++){
+			if (v_data[v][0]!='$'){
+				paramV.push_back(v_data[v]);
+				continue;
+			}
+			string vk=v_data[v].substr(1);
+			if (m_parameters.has(vk)) paramV.push_back(m_parameters[vk].getString());
+			else paramV.push_back(v_data[v]);
+		}
+		return;
+	} 
+	/* temporarily treat all as string and let apps do the convertion
+	 * else if (textBuf.find('.') != string::npos){
+		//vector of double
+		vector<string> v_data;
+		get_tokens(textBuf, v_data, ',');
+		vector<double> doubleV;
+		Parameter d_value;
+		d_value.setDoubleVector(doubleV);
+		for (size_t v=0; v< v_data.size(); v++){
+			doubleV.push_back(stod(v_data[v]));
+		}
+		text_buf.clear();
+		return;
+	} else {
+		vector<string> v_data;
+		get_tokens(textBuf, v_data, ',');
+		vector<int> intV;
+		Parameter i_value;
+		i_value.setIntVector(IntV);
+		for (size_t v=0; v< v_data.size(); v++){
+			try {
+			intV.push_back(stol(v_data[v]));
+			}
+			catch(...){
+				cout << "Bad integer " << v_data[v] << endl;
+			}
+		}
+	}
+	*/
+}
+
+void read_hash_param_value(Parameter& h_param, FILE *cfg)
+	//called by the case key:{
+	//which will make the pair key:h_param;
+	//looking for the closing brace }
+	//to complete h_param
+{
+	hash_map<string, Parameter> p_dict=h_param.getDict();
+	size_t lq_count=1;
+	size_t rq_count=0;
+	string text_buf;
+	char cfgbuf[160];
+   	while (!feof(cfg) && lq_count != rq_count){ 
+		fgets(cfgbuf, 160, cfg); 
+		char *pH=strchr(cfgbuf, '#'); 
+		if (pH) *pH=0; 
+		if (strlen(cfgbuf) < 1) continue;
+		char* pCol=cfgbuf; 
+		lq_count += occurrence_c(pCol, '{');
+		rq_count += occurrence_c(pCol, '}');
+		text_buf += trim(cfgbuf);
+		if (pCol[strlen(pCol)-1]==':') continue;
+		size_t iCol=text_buf.find(':');
+		if (iCol == string::npos){
+			//throw runtime_error("hash value has no key");
+			continue;
+		}
+		if (iCol==text_buf.length()-1) continue;
+		string key=trim(text_buf.substr(0, iCol));
+		Parameter& p_value=p_dict[key];
+		if (text_buf.find('{') != string::npos){
+			p_value.setDict(hash_map<string, Parameter>());
+			//hash_map<string, Parameter>& dict=p_value.getDict();
+			read_hash_param_value(p_value, cfg);
+			//p_dict[key]=p_value;
+			text_buf.clear();
+			continue;
+		}
+		if (text_buf.find('[') != string::npos){
+			read_vector_param_value(p_value, text_buf, cfg);
+			//p_dict[key]=v_value;
+			text_buf.clear();
+			continue;
+		}
+		string val=trim(text_buf.substr(iCol+1));
+		if (val.find('\'') != string::npos || val.find('"') != string::npos){
+			//char qt=val[0];
+			replace_c(val, '\'');
+			replace_c(val, '"');
+			//Parameter s_value;
+			if (val[0]=='$'){
+				string vk=val.substr(1);
+				if (m_parameters.has(vk))
+				val=m_parameters[vk].getString();
+			}
+			p_value.setString(trim(val));
+			//p_dict[key]=s_value;
+			text_buf.clear();
+			continue;
+		}
+		/* temporary treat all as string and let app do conversion
+		if (val.find('.') != string::npos){
+			Parameter d_value;
+			d_value.setDouble(stod(val));
+			p_dict[key]=d_value;
+			text_buf.clear();
+			continue;
+		}
+		Parameter i_value;
+		try {
+			i_value.setInt(stol(val));
+			p_dict[key]=i_value;
+		} catch (...){
+			cout << "Bad integer " << val << endl;
+		}
+		text_buf.clear();
+		*/
+	}
+}
+
+void read_cfg(char* file_name)
+{
+	Parameter aParam;
+	FILE* cfg=0;
+	cfg=fopen(file_name, "r");
+	if (!cfg){
+		fprintf(stderr, "%s config_file_name unknown\n", file_name);
+                exit(EXIT_FAILURE);
+	}
+	hash_map<string, Parameter> h_mp;
+	aParam.setDict(h_mp);
+	m_parameters=aParam;
+	//TO-DO .... set CW Global parameter to h_mp
+	//       1. TIME_ZONE (TZ)
+	//       2. TODAY : YYYY, MM, DD (by TZ)
+	//       3. G-TODAY : GYYYY, GMM, GDD (TZ(0))
+	//also need to consider when $key; currently only $value
+	read_hash_param_value(aParam, cfg);
+	cout << aParam << endl;
+}
+
+int main(int argc, char **argv)
+{
+	if (argc != 2) {
+		fprintf(stderr, "Usage: %s config_file_name\n", argv[0]);
+		exit(EXIT_FAILURE);
+	}
+	//string config=argv[1];
+	read_cfg(argv[1]);//config);
+	return 0;
+}
+

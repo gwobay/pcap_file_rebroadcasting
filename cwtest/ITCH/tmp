@@ -1,0 +1,96 @@
+          if(context.udp) {
+		  cout << " udp fd=" << fd << " ";
+		  if (m_events[n].events & EPOLLOUT){
+			  context.handler->to_write(fd);
+			  continue;
+		  }
+	  size_t iTry0=0;
+	  size_t udp_boundary_read=0;
+            for(;;) {
+              ssize_t msgrecv_len=0;
+	      if (!m_test_mode) msgrecv_len = recvfrom(fd, m_buffer, m_buffer_len, MSG_DONTWAIT, (struct sockaddr*)& from_addr, &from_addr_len);
+	      else {
+		      //I have to simulate the udp message boundary here 
+		      //so the parse function behaves similar to tcp
+		      //will contiue read the data until empty read
+		      //the message boundary will be a 0x03 
+		      //
+		
+		      iTry0=0;
+		      size_t loc=0;
+		      bool foundMB=false;
+		      size_t resv=20;
+		      do {
+	      		  msgrecv_len = ::read(fd, &m_buffer[loc], resv);
+				if (msgrecv_len < 0){
+					if(errno != EAGAIN) {
+		cout << __func__ <<  " read : " << strerror(errno) << endl;
+		break;
+					}
+					if (++iTry0 > 3) break;
+					resv /= 2;
+					if (resv==0)
+					resv=1;
+				}
+			  	else if (msgrecv_len==0) iTry0++;
+			  	else {
+					iTry0=0; 
+					while (msgrecv_len-- > 0){
+					//here is the simulated 
+					//message boundary 3x 0x01
+					   if (loc > 1 &&
+						m_buffer[loc]==UDP_BOUNDARY &&
+						m_buffer[loc-1]==UDP_BOUNDARY &&
+						m_buffer[loc-2]==UDP_BOUNDARY)
+					   {
+	printf("%s ch.%d get MB at %d\n", context.handler->name(),
+			context.handler_context, loc-2);
+	context.handler->parse(context.handler_context, m_buffer, loc-2);
+				memcpy(m_buffer, &m_buffer[loc+1], msgrecv_len);
+						loc=msgrecv_len;
+						msgrecv_len=0;
+						continue;
+						//foundMB=true;
+					//break;
+					   }
+					   loc++;
+					}
+				}
+		      } while (iTry0 <2);
+		      if (loc < 1) break;
+		      //following few lines will be reached only error
+		      //of the test pipe 
+		      while (m_buffer[loc-1]==UDP_BOUNDARY) loc--;
+		      msgrecv_len=loc;
+		      udp_boundary_read++;
+		      cout << __func__ << " udp cycle" <<udp_boundary_read << " read " << msgrecv_len << " bytes\n";
+	      }
+              if(msgrecv_len >= 0) {
+		    if (msgrecv_len==0) iTry0++;
+		    else { 
+		        iTry0=0;
+			if(context.source_ip == 0 || 
+				from_addr.sin_addr.s_addr == context.source_ip) {
+                  		context.handler->parse(context.handler_context, m_buffer, msgrecv_len);
+                  		++context.recv_count;
+                  		context.recv_bytes += msgrecv_len;
+			} else {
+				char got[INET_ADDRSTRLEN];
+                  		char expected[INET_ADDRSTRLEN];
+           			inet_ntop(AF_INET, &(from_addr.sin_addr), got, INET_ADDRSTRLEN);
+           			inet_ntop(AF_INET, &(context.source_ip), expected, INET_ADDRSTRLEN);
+                 		cout << __func__ << " recvfrom:(unknown source):"; 
+         			printf(" %s expected '%s'\n", got, expected);
+				break;
+                	}
+		    }
+		    if (iTry0 > 3) break;
+              } else if(errno == EAGAIN) {
+		      cout << "recvfrom: got port busy ";
+		      if (++iTry0 > 3) break;
+              } else {
+       printf("%s recv returned %s\n", __func__,  strerror(errno));
+       		break;
+              }
+            }
+          } else {

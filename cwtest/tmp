@@ -1,0 +1,21 @@
+struct current_date_time{
+	string YYYY;
+	string MM;
+	string DD;
+	string hh;
+	string mm;
+	string ss;
+	string timeString;
+	current_date_time(){
+	    time_t     tnow;
+	    time(&tnow);
+	    struct tm*  t_now = localtime(&tnow); 
+	    //time zone should be set first
+	    YYYY = std::to_string(t_now->tm_year+1900);
+	    MM = std::to_string(t_now->tm_mon +101).substr(1,2);
+	    DD = std::to_string(t_now->tm_mday +100).substr(1,2);
+	    hh = std::to_string(t_now->tm_hour +100).substr(1,2);
+	    mm = std::to_string(t_now->tm_min +100).substr(1,2);
+	    ss = std::to_string(t_now->tm_sec +100).substr(1,2);
+	}
+};

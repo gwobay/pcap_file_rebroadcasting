@@ -1,0 +1,101 @@
+#!/tools/bin/redhat/x_64/python
+import sys, ctypes
+flags = sys.getdlopenflags()
+sys.setdlopenflags(flags | ctypes.RTLD_GLOBAL)
+
+import code, os, time, optparse
+
+from hf_core import Admin, App, Data, MD, Trading
+from hf_core import Event, Event_Hub, Simulator, Service
+from hf_core import ExchangeSession
+from hf_core import Platform
+from hf_core import Shutdown_Acceptor
+from hf_core import OMServer
+
+from hf_tools import Logger
+from hf_tools import Logger_Manager, Config_Utils, Util
+from hf_tools.config import Config, ConfigFormatError
+
+if __name__ == '__main__':
+    
+    parser = optparse.OptionParser()
+    parser.add_option("--start", "-s", help="Run date (today)",default = Config_Utils.today());
+    
+    (options, arguments) = Config_Utils.parse_options(parser)
+    cfg = Config_Utils.parse_config(options, arguments)
+
+    if (options.start != Config_Utils.today()):
+        cfg['set_today_time'] = True
+    
+    platform = Platform.Platform(cfg)
+....................................................
+    //buid the app
+    set timezone
+    set date
+    set the platform
+    ( thread affinity... )
+    start th loger
+
+    start admin
+    set the alert service
+    ===========================> set product manager parameter
+    ================================ > read the univ file
+    ....................... Load exchange files
+    ....................... Load price file
+    !!!!!!!!!!!!!!!!!!!!!!! the mdcache is init here !!!!!!!!!!!!!!!!
+    !!!!!!!!!!!!!!!!!!!!!!! with parameter # line 369
+    ================================> set the HF_LOCATION ????????????
+    start the app
+........................................................
+
+    platform.create_timer_service()
+
+    platform.create_market_data() **********************************
+    ................................... start market data manager
+    ..md object from app  //line 404
+    ........get watchdog config
+    ........initiate md.watchdog with app and watchdog config
+    *****!!! md.init(md_param)    !!!!!!!!!!
+    //include the dispatcher and provider
+    .................... dispatchers ........
+    ........... add dispatcher using the config disp params
+    ....................................................
+    .....................provider ......................
+    ........... add provider using the config provider params
+
+    platform.create_timers()
+#
+    platform.app.pm.init()
+    platform.app.em.init()
+    platform.init_mdcache()  //line 594
+    
+    platform.md.start()
+
+# ............................................ Simulation 
+# ............................................ set up ends here
+    platform.timers.start()
+    
+    platform.create_misc_services()
+    platform.start_admin_service()
+    
+    platform.stdout.sync_flush()
+    
+    base_path = os.sep.join(Platform.__file__.split(os.sep)[0:-3])
+    
+    print "MDCache '%s' startup complete" % base_path 
+    platform.logger.info("MDCache '%s' startup complete" % base_path)
+    if options.console:
+        code.interact(local = locals())
+        print "Console shutdown"
+        platform.logger.info("Console shutdown")
+    else:
+        shutdown = Shutdown_Acceptor.Shutdown_Acceptor()
+        platform.app.hub.subscribe(Event.Event_Type.SystemStatus, Event.Event_Acceptor(shutdown))
+        try:
+            while not shutdown.wait_for_shutdown():
+                pass
+            print "Shutdown received"
+            platform.logger.info("Shutdown received")
+        except KeyboardInterrupt:
+            print "Interrupt from console"
+            platform.logger.info("Interrupt from console")

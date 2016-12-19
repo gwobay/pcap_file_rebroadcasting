@@ -1,0 +1,40 @@
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/epoll.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <sys/eventfd.h>
+
+#include <netinet/tcp.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <MD/MDManager.h>
+#include <ITCH/functions.h>
+#include <ITCH/Snapshot_Handler.h>
+#include <ITCH/ASX_Test_Handler.h>
+#include <ITCH/Simple_Dispatcher.h>
+#include <Data/ASX_ITCH_1_1_Handler.h>
+#include <Util/Parameter.h>
+#include <Util/Network_Utils.h>
+#include <Util/File_Utils.h>
+
+#include <initializer_list>
+
+#include <boost/iostreams/device/file.hpp>
+#include <boost/assign/list_of.hpp>
+#include <boost/tokenizer.hpp>
+#include <boost/foreach.hpp>
+#include <boost/algorithm/string/trim_all.hpp>
+
+#include <stdarg.h>
+#include <stdint.h>
+#include <chrono>
+#include <thread>
+#include <vector>
+
+

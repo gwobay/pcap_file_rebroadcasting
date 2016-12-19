@@ -1,0 +1,397 @@
+#include <map>
+#include <set>
+#include <list>
+#include <cmath>
+#include <ctime>
+#include <deque>
+#include <queue>
+#include <stack>
+#include <string>
+#include <bitset>
+#include <cstdio>
+#include <limits>
+#include <vector>
+#include <climits>
+#include <cstring>
+#include <cstdlib>
+#include <fstream>
+#include <numeric>
+#include <sstream>
+#include <iostream>
+#include <algorithm>
+#include <unordered_map>
+#include <sys/time.h>
+
+using namespace std;
+
+static unordered_map<string, char> order_id_map;
+
+struct queued_order
+{
+    //private:
+        string order_id;
+        //double price;
+    uint16_t price;
+        size_t lvsQty;
+        uint64_t time;
+    //public:
+        size_t match(queued_order& a, queued_order& b){
+            size_t matched_qty=b.lvsQty;
+            if (a.lvsQty > b.lvsQty){
+                a.lvsQty -= b.lvsQty;
+                b.lvsQty=0;
+            } else
+                {
+                matched_qty = a.lvsQty;
+                b.lvsQty -= a.lvsQty;
+                a.lvsQty = 0;
+            }
+            return matched_qty;
+        }
+        queued_order(const string& new_order_id,
+                     const uint16_t& new_price,
+                     const size_t& qty):
+                         order_id(new_order_id)
+                             ,price(new_price)
+                             ,lvsQty(qty){
+                                 struct timeval tv;
+                                 gettimeofday(&tv, 0);
+                                 time=tv.tv_sec*1000000+tv.tv_usec;
+                             }
+        struct compareSell {
+            bool operator()(const queued_order& a, const queued_order& b) const {
+                if (a.price == b.price) {
+                    return a.time > b.time;
+                } else {
+                    return a.price > b.price; //lower price first
+                }
+            }
+        };
+        struct compareBuy {
+            bool operator()(const queued_order& a, const queued_order& b) const {
+                if (a.price == b.price) {
+                    return a.time > b.time;
+                } else {
+                    return a.price < b.price; //higher price first
+                }
+            }
+        };
+};
+
+class sell_order_book: public std::priority_queue<queued_order, std::deque<queued_order>, queued_order::compareSell>
+{
+public:
+    void cancel_order(const string& cxl_id){
+        for (std::deque<queued_order>::iterator it=c.begin();
+                it != c.end(); it++){
+            if ((*it).order_id != cxl_id) continue;
+            c.erase(it);
+            break;
+        }
+    }
+
+    void sliceTop(size_t qty){
+        c.front().lvsQty -= qty;
+    }
+
+    void print_book(){
+        map<int, int> summary_book;
+        for (std::deque<queued_order>::iterator it=c.begin();
+                it != c.end(); it++){
+            summary_book[(*it).price] += (*it).lvsQty;
+        }
+        for (map<int, int>::reverse_iterator it=summary_book.rbegin();
+            it != summary_book.rend(); it++){
+            cout << (*it).first << " " << (*it).second << endl;
+        }
+    }
+};
+
+class buy_order_book: public std::priority_queue<queued_order, std::deque<queued_order>, queued_order::compareBuy>
+{
+public:
+    void cancel_order(const string& cxl_id){
+        for (std::deque<queued_order>::iterator it=c.begin();
+                it != c.end(); it++){
+            if ((*it).order_id != cxl_id) continue;
+            c.erase(it);
+            break;
+        }
+    }
+
+    void sliceTop(size_t qty){
+        c.front().lvsQty -= qty;
+    }
+
+    void print_book(){
+        map<int, int> summary_book;
+        for (std::deque<queued_order>::iterator it=c.begin();
+                it != c.end(); it++){
+            summary_book[(*it).price] += (*it).lvsQty;
+        }
+        for (map<int, int>::reverse_iterator it=summary_book.rbegin();
+            it != summary_book.rend(); it++){
+            cout << (*it).first << " " << (*it).second << endl;
+        }
+    }
+};
+
+static void get_tokens(const string& aLine, vector<string>& list){
+
+    //std::cout << "test line is " << aLine << std::endl;
+    const char *p0=aLine.c_str();
+    const char *pN=p0;
+    bool line_end=false;
+    while (!line_end){
+        //size_t l=0;
+        while(*p0 && *p0 <= ' ') p0++;
+        if (!*p0) break;
+        pN=p0;
+        while (*pN > ' ') pN++;
+        if (!*pN) line_end=true;
+        //*pN=0;
+        string a(p0, size_t(pN-p0));
+        //cout << "Insert data:" << a << std::endl;
+        list.push_back(string(p0, size_t(pN-p0)));
+        if (line_end) break;
+        p0=++pN;
+    }
+}
+
+static void match_books(sell_order_book& sell_book, buy_order_book& buy_book)
+{
+    if (sell_book.empty() || buy_book.empty()){
+        //cout << "nothing to match " << endl;
+        return;
+    }
+    const queued_order* sOrd=&(sell_book.top());
+    const queued_order* bOrd=&(buy_book.top());
+    if (sOrd->price > bOrd->price) {
+        //cout << "No Match in BOOKs " << endl;
+        return;
+    }
+    if (sOrd->time < bOrd->time){
+        //cout << "BUYing..." << endl;
+        do {
+                size_t prtQty=(sOrd->lvsQty>bOrd->lvsQty)?bOrd->lvsQty:sOrd->lvsQty;
+            printf("TRADE %s %u %lu %s %u %lu\n",
+                   sOrd->order_id.c_str(), sOrd->price, prtQty,//sOrd->lvsQty,
+                   bOrd->order_id.c_str(), bOrd->price, prtQty);//bOrd->lvsQty);
+            if (sOrd->lvsQty > bOrd->lvsQty){
+                order_id_map.erase(bOrd->order_id);
+                //sell_book.top().lvsQty -= bOrd->lvsQty;
+                sell_book.sliceTop(bOrd->lvsQty);
+                buy_book.pop();
+                if (buy_book.empty()) break;
+                bOrd=&(buy_book.top());
+            } else {
+                order_id_map.erase(sOrd->order_id);
+                buy_book.sliceTop(sOrd->lvsQty);
+                sell_book.pop();
+                if (bOrd->lvsQty ==0){
+                    order_id_map.erase(bOrd->order_id);
+                    buy_book.pop();
+                    if (buy_book.empty()) break;
+                    bOrd=&(buy_book.top());
+                }
+                if (sell_book.empty()) break;
+                sOrd=&(sell_book.top());
+            }
+        } while (sOrd->price <= bOrd->price);
+
+        return;
+    }
+    //cout << "SELLing ... " << endl;
+        do {
+            size_t prtQty=(sOrd->lvsQty>bOrd->lvsQty)?bOrd->lvsQty:sOrd->lvsQty;
+            printf("TRADE %s %u %lu %s %u %lu\n",
+                   bOrd->order_id.c_str(), bOrd->price, prtQty, //bOrd->lvsQty,
+                   sOrd->order_id.c_str(), sOrd->price, prtQty);//sOrd->lvsQty);
+            if (sOrd->lvsQty > bOrd->lvsQty){
+                order_id_map.erase(bOrd->order_id);
+                //sell_book.top().lvsQty -= bOrd->lvsQty;
+                sell_book.sliceTop(bOrd->lvsQty);
+                buy_book.pop();
+                if (buy_book.empty()) break;
+                bOrd=&(buy_book.top());
+            } else  {
+                order_id_map.erase(sOrd->order_id);
+                buy_book.sliceTop(sOrd->lvsQty);
+                sell_book.pop();
+                if (bOrd->lvsQty ==0){
+                    order_id_map.erase(bOrd->order_id);
+                    buy_book.pop();
+                    if (buy_book.empty()) break;
+                    bOrd=&(buy_book.top());
+                }
+                if (sell_book.empty()) break;
+                sOrd=&(sell_book.top());
+            }
+        } while (sOrd->price <= bOrd->price);
+}
+
+
+int main() {
+    //prepare containers
+    //priority_queue<queued_order, deque<queued_order>, queued_order::compareSell> sell_book;
+    sell_order_book sell_book;
+    //priority_queue<queued_order, deque<queued_order>, queued_order::compareBuy> buy_book;
+    buy_order_book buy_book;
+    /* Enter your code here. Read input from STDIN. Print output to STDOUT */
+    bool done_read=false;
+    while (!done_read){
+        //std::cout << "Please enter your OMS command" << std::endl;
+        string sInput;
+        if (std::cin.eof()) break;
+        getline(std::cin, sInput);
+        size_t input_len=sInput.length();
+        if (input_len < 2) continue;
+        //if (strstr(sInput.c_str(), "  ")) continue;
+        vector<string> tokens;
+        get_tokens(sInput, tokens);
+        //cout << "Cmd Line: " << tokens.size() << endl;
+        if (!strstr("PRINT CANCEL MODIFY BUY SELL", tokens[0].c_str())){
+            //cout << "BAD COMMAND LINE:" << sInput << endl;
+            continue;
+        }
+        bool good1=false;
+        switch(tokens.size()){
+            case 1:
+                if (tokens[0]=="PRINT"){
+                    std::cout << "SELL:" << std::endl;
+                    sell_book.print_book();
+                    std::cout << "BUY:" << std::endl;
+                    buy_book.print_book();
+                    //std::cout << std::endl;
+                    good1=true;
+                }
+            break;
+            case 2:
+                if (tokens[0]=="CANCEL"){
+                    char b_s=order_id_map[tokens[1]];
+                    if (b_s == 'B'){
+                        buy_book.cancel_order(tokens[1]);
+
+                    } else if (b_s =='S'){
+                        sell_book.cancel_order(tokens[1]);
+                    } else {
+                        //cout << "FAILED to cancel " << tokens[1] << endl;
+                        break;
+                    }
+                    order_id_map.erase(tokens[1]);
+                    good1=true;
+                }
+            break;
+            case 5:
+                {
+                bool isBuy=true;
+                bool isIOC=(tokens[1]=="IOC");
+                uint16_t price=0;
+                size_t qty=0;
+                string ord_id=tokens[4];
+                    string sPrice=tokens[2];
+                    string sQty=tokens[3];
+                if (tokens[0]=="MODIFY"){
+                    ord_id=tokens[1];
+                    char b_s=order_id_map[ord_id];
+                    if (b_s == 'B'){
+                        buy_book.cancel_order(ord_id);
+                    } else if (b_s =='S'){
+                        sell_book.cancel_order(ord_id);
+                    } else {
+                        //cout << "FAILED to modify " << ord_id << endl;
+                        break;
+                    }
+                    order_id_map.erase(ord_id);
+                    if (tokens[2]=="BUY") isBuy=true;
+                    else if (tokens[2]=="SELL") isBuy=false;
+                    sPrice=tokens[3];
+                    sQty=tokens[4];
+                } else if (tokens[0]=="BUY"){
+                    if (!strstr("GFD IOC", tokens[1].c_str())){
+                        //cout << "BAD TIF COMMAND :" << tokens[1] << endl;
+                        break;
+                    }
+                    isBuy=true;
+                } else if (tokens[0]=="SELL"){
+                    if (!strstr("GFD IOC", tokens[1].c_str())){
+                        //cout << "BAD TIF COMMAND :" << tokens[1] << endl;
+                        break;
+                    }
+                    isBuy=false;
+                }
+                    //assert good price and qty
+                if (sPrice.find('-') != string::npos || sQty.find('-') != string::npos) break;
+                try {
+                    price=stoi(sPrice);
+                    qty=stol(sQty);
+                } catch (...){
+                       //cout << "Bad price or qty " << endl;
+                        break;
+                }
+                if (qty < 1) break;
+
+                good1=true;
+                if (isBuy){
+                        if (isIOC){
+                            bool done_match=false;
+                            while (!sell_book.empty()){
+                                const queued_order& chk=sell_book.top();
+                                if (chk.price > price) break;
+                                size_t prtQty=(chk.lvsQty > qty)?qty:chk.lvsQty;
+                                printf("TRADE %s %u %lu %s %u %lu\n",
+                                        chk.order_id.c_str(), chk.price, prtQty,//chk.lvsQty,
+                                        ord_id.c_str(), price, prtQty);//qty);
+                                if (chk.lvsQty > qty){
+                                    //chk.lvsQty -= qty;
+                                    sell_book.sliceTop(qty);
+                                    break;
+                                }
+                                qty -= chk.lvsQty;
+                                order_id_map.erase(chk.order_id);
+                                sell_book.pop();
+                            }
+                            break;
+                        }
+                        buy_book.push(queued_order(ord_id, price, qty));
+                        order_id_map[ord_id]='B';
+                 } else //if (tokens[2]=="SELL")
+                {
+                        if (isIOC){
+                            bool done_match=false;
+                            while (!buy_book.empty()){
+                                const queued_order& chk=buy_book.top();
+                                if (chk.price < price) break;
+                                size_t prtQty=(chk.lvsQty > qty)?qty:chk.lvsQty;
+                                printf("TRADE %s %u %lu %s %u %lu\n",
+                                        chk.order_id.c_str(), chk.price, prtQty,// chk.lvsQty,
+                                        ord_id.c_str(), price, prtQty);//qty);
+                                if (chk.lvsQty > qty){
+                                    //chk.lvsQty -= qty;
+                                    buy_book.sliceTop(qty);
+                                    break;
+                                }
+                                qty -= chk.lvsQty;
+                                order_id_map.erase(chk.order_id);
+                                buy_book.pop();
+                            }
+                            break;
+                        }
+                        order_id_map[ord_id]='S';
+                        sell_book.push(queued_order(ord_id, price, qty));
+                    }
+                if (!sell_book.empty() && !buy_book.empty())
+                match_books(sell_book, buy_book);
+                }
+            break;
+            default:
+
+            break;
+        }
+        if (!good1) {
+            //cout << "BAD COMMAND LINE:" << sInput << endl;
+        }
+    }
+
+    return 0;
+}
