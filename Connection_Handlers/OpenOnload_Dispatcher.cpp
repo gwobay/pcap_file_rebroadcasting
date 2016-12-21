@@ -55,9 +55,9 @@ enum {
 #define likely(x)       __builtin_expect(!!(x),1)
 #define unlikely(x)     __builtin_expect(!!(x),0)
 
-namespace hf_md {
+namespace kou_connect {
   using namespace std;
-  using namespace hf_tools;
+  using namespace kou_tools;
   
   void
   OpenOnload_Dispatcher::init(const string& name, MDManager* md, const Parameter& params)
@@ -287,7 +287,7 @@ namespace hf_md {
     }
     m_ep_fd = epoll_create(300);
     if(m_ep_fd < 0) {
-      throw hf_tools::errno_exception("Disaptcher::OpenOnload_Dispatcher::start_sync: Error calling epoll_create", errno);
+      throw kou_tools::errno_exception("Disaptcher::OpenOnload_Dispatcher::start_sync: Error calling epoll_create", errno);
     }
     
     char buf[1024];

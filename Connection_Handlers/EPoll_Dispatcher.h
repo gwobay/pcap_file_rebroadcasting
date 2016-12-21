@@ -1,5 +1,5 @@
-#ifndef hf_md_QBT_EPoll_Dispatcher_h
-#define hf_md_QBT_EPoll_Dispatcher_h
+#ifndef kou_connect_QBT_EPoll_Dispatcher_h
+#define kou_connect_QBT_EPoll_Dispatcher_h
 
 #include <Data/Handler.h>
 #include <Util/hash_util.h>
@@ -17,10 +17,10 @@ extern "C" {
   struct epoll_event;
 }
 
-namespace hf_md {
+namespace kou_connect {
   using namespace __gnu_cxx;
   using namespace std;
-  using namespace hf_core;
+  using namespace kou_core;
     
   class EPoll_Dispatcher : public MDDispatcher {
   public:
@@ -132,4 +132,4 @@ namespace hf_md {
 
 }
 
-#endif /* ifndef hf_md_QBT_EPoll_Dispatcher_h */
+#endif /* ifndef kou_connect_QBT_EPoll_Dispatcher_h */

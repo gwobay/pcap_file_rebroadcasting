@@ -12,7 +12,7 @@
 #include <netinet/tcp.h>
 #include <stdarg.h>
 
-namespace hf_md {
+namespace kou_connection {
   
   bool
   ASX_ITCH_Session::init_mcast(const string& line_name, const Parameter& params)

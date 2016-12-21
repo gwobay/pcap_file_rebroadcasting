@@ -49,9 +49,9 @@ enum {
         SOF_TIMESTAMPING_RAW_HARDWARE
 };
 
-namespace hf_md {
+namespace kou_connect {
   using namespace std;
-  using namespace hf_tools;
+  using namespace kou_tools;
   
   static
   int setnonblocking(int fd)
@@ -548,7 +548,7 @@ namespace hf_md {
   {
     m_ep_fd = epoll_create(300);
     if(m_ep_fd < 0) {
-      throw hf_tools::errno_exception("Disaptcher::EPoll_Dispatcher: Error calling epoll_create", errno);
+      throw kou_tools::errno_exception("Disaptcher::EPoll_Dispatcher: Error calling epoll_create", errno);
     }
     
     m_fd_to_context.resize(2048, -1);

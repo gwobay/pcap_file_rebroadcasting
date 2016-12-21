@@ -1,5 +1,5 @@
-#ifndef hf_md_QBT_OpenOnload_Dispatcher_h
-#define hf_md_QBT_OpenOnload_Dispatcher_h
+#ifndef kou_connect_QBT_OpenOnload_Dispatcher_h
+#define kou_connect_QBT_OpenOnload_Dispatcher_h
 
 #include <QBT/EPoll_Dispatcher.h>
 
@@ -7,10 +7,10 @@
 
 struct onload_zc_recv_args;
 
-namespace hf_md {
+namespace kou_connect {
   using namespace __gnu_cxx;
   using namespace std;
-  using namespace hf_core;
+  using namespace kou_core;
   
   class OpenOnload_Dispatcher : public EPoll_Dispatcher {
   public:
@@ -62,4 +62,4 @@ namespace hf_md {
 
 }
 
-#endif /* ifndef hf_md_QBT_OpenOnload_Dispatcher_h */
+#endif /* ifndef kou_connect_QBT_OpenOnload_Dispatcher_h */

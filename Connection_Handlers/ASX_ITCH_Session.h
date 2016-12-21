@@ -1,5 +1,5 @@
-#ifndef hf_md_QBT_ASX_ITCH_Session_h
-#define hf_md_QBT_ASX_ITCH_Session_h
+#ifndef kou_md_QBT_ASX_ITCH_Session_h
+#define kou_md_QBT_ASX_ITCH_Session_h
 
 #include <Data/Handler.h>
 #include <Data/ASX_ITCH_1_1_Handler.h>
@@ -16,16 +16,16 @@
 #include <Util/Parameter.h>
 #include <Util/Time.h>
 
-namespace hf_core {
+namespace kou_core {
   class MDDispatcher;
 }
 
-namespace hf_md {
+namespace kou_connection {
   using namespace std;
-  using namespace hf_tools;
-  using namespace hf_core;
+  using namespace kou_tools;
+  using namespace kou_core;
 
-  class ASX_ITCH_Session : public hf_core::MDProvider, public Event_Acceptor {
+  class ASX_ITCH_Session : public kou_core::MDProvider, public Event_Acceptor {
   public:
     
     // MDProvider functions
@@ -79,4 +79,4 @@ namespace hf_md {
   
 }
 
-#endif /* ifndef hf_md_QBT_ASX_ITCH_Session_h */
+#endif /* ifndef kou_md_QBT_ASX_ITCH_Session_h */
